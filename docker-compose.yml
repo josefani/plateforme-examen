@@ -55,9 +55,7 @@ services:
     depends_on:
       - backend
     ports:
-      - "127.0.0.1:${FRONTEND_PORT:-4173}:80"
-    environment:
-      API_UPSTREAM: ${API_UPSTREAM:-backend:5000}
+      - "127.0.0.1:${FRONTEND_PORT:-4173}:4173"
     networks:
       - plateforme_examen_network
 

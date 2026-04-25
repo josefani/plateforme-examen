@@ -12,9 +12,16 @@ ENV VITE_API_URL=$VITE_API_URL
 
 RUN npm run build
 
-FROM nginx:alpine
+FROM node:20-alpine
 
-COPY --from=build /app/dist /usr/share/nginx/html
-COPY nginx.conf.template /etc/nginx/templates/default.conf.template
+WORKDIR /app
 
-EXPOSE 80
+COPY package*.json ./
+RUN npm ci
+
+COPY --from=build /app/dist ./dist
+COPY vite.config.ts ./vite.config.ts
+
+EXPOSE 4173
+
+CMD ["npm", "run", "preview", "--", "--host", "0.0.0.0", "--port", "4173"]

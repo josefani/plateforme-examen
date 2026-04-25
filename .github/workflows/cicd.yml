@@ -330,5 +330,4 @@ jobs:
 
             \$KUBECTL rollout status deployment/backend -n $remote_namespace --timeout=180s
             \$KUBECTL rollout status deployment/frontend -n $remote_namespace --timeout=180s
-            \$KUBECTL rollout status deployment/nginx-gateway -n $remote_namespace --timeout=180s
           "
