@@ -1,9 +1,7 @@
 .codex
 .env
 
-Dockerfile
 .dockerignore
-docker-compose.yml
 
 node_modules/
 __pycache__
