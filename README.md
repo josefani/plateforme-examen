@@ -205,3 +205,5 @@ Le seed cree :
   - `groups = 1`
   - `questions = 4`
   - `exams = 1`
+
+---

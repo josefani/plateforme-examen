@@ -136,11 +136,20 @@ export function ExamSessionPage() {
   }, [attemptQuery.data?.item.attempt.status, heartbeatMutation])
 
   useEffect(() => {
-    const onVisibilityChange = () => {
-      if (document.hidden) {
-        toast.error("Changement d'onglet détecté")
+    const onVisibilityChange = async () => {
+      if (document.hidden && attemptQuery.data?.item.attempt.status === 'in_progress') {
         performEvent('visibility_hidden', { at: new Date().toISOString() })
-      } else {
+        toast.error("Changement d'onglet détecté — examen terminé automatiquement.", { duration: 6000 })
+        try {
+          if (isDirty) {
+            await saveMutation.mutateAsync('autosave')
+          }
+          await submitMutation.mutateAsync()
+        } catch {
+          // submission already handles navigation on success
+          navigate('/student/results')
+        }
+      } else if (!document.hidden) {
         performEvent('visibility_visible', { at: new Date().toISOString() })
       }
     }
@@ -184,7 +193,7 @@ export function ExamSessionPage() {
       document.removeEventListener('copy', preventCopy)
       document.removeEventListener('contextmenu', preventContextMenu)
     }
-  }, [performEvent])
+  }, [performEvent, attemptQuery.data?.item.attempt.status, isDirty, saveMutation, submitMutation, navigate])
 
   const handleSubmit = async () => {
     if (isDirty) {

@@ -68,6 +68,7 @@ class AdminService:
             raise ApiError("One or more groups were not found.", HTTPStatus.BAD_REQUEST)
 
         student.group_memberships.clear()
+        db.session.flush()
         for group in groups:
             student.group_memberships.append(GroupMember(group=group, student=student))
 
@@ -134,6 +135,7 @@ class AdminService:
         if len(members) != len(set(member_ids)):
             raise ApiError("One or more students were not found.", HTTPStatus.BAD_REQUEST)
         group.members.clear()
+        db.session.flush()
         for student in members:
             group.members.append(GroupMember(group=group, student=student))
 
