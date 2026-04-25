@@ -11,6 +11,7 @@ class Group(TimestampMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(150), nullable=False, unique=True)
     description = db.Column(db.Text, nullable=True)
+    is_archived = db.Column(db.Boolean, nullable=False, default=False, server_default="false")
 
     members = db.relationship("GroupMember", back_populates="group", cascade="all, delete-orphan")
     assignments = db.relationship("ExamAssignment", back_populates="group")
@@ -20,6 +21,7 @@ class Group(TimestampMixin, db.Model):
             "id": self.id,
             "name": self.name,
             "description": self.description,
+            "is_archived": self.is_archived,
             "created_at": serialize_datetime(self.created_at),
             "updated_at": serialize_datetime(self.updated_at),
         }

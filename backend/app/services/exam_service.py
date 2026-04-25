@@ -446,3 +446,36 @@ class ExamService:
         for attempt in attempts:
             if attempt.last_heartbeat_at and now - attempt.last_heartbeat_at > timedelta(seconds=grace_seconds):
                 ExamService.submit_attempt(attempt, auto=True, reason="heartbeat_missing")
+
+    @staticmethod
+    def create_retake_request(student: User, exam_id: int, reason: str | None):
+        from app.models.exam import RetakeRequest
+
+        attempt = Attempt.query.filter_by(exam_id=exam_id, student_id=student.id).first()
+        if attempt is None:
+            raise ApiError("No attempt found for this exam.", HTTPStatus.NOT_FOUND)
+        if attempt.status == AttemptStatus.IN_PROGRESS:
+            raise ApiError("Cannot request retake while attempt is still in progress.", HTTPStatus.CONFLICT)
+        if attempt.result is None:
+            raise ApiError("Results are not yet available.", HTTPStatus.CONFLICT)
+
+        percentage = float(attempt.result.percentage) if attempt.result.percentage else 0
+        if percentage >= 75:
+            raise ApiError("You passed this exam. Retake is only available for failed exams.", HTTPStatus.CONFLICT)
+
+        existing = RetakeRequest.query.filter_by(
+            exam_id=exam_id, student_id=student.id, status="pending"
+        ).first()
+        if existing:
+            raise ApiError("You already have a pending retake request for this exam.", HTTPStatus.CONFLICT)
+
+        req = RetakeRequest(
+            exam_id=exam_id,
+            student_id=student.id,
+            attempt_id=attempt.id,
+            reason=reason,
+            status="pending",
+        )
+        db.session.add(req)
+        db.session.commit()
+        return req

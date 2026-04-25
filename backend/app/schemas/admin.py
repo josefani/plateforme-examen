@@ -27,6 +27,7 @@ class StudentUpdateSchema(Schema):
 class GroupSchema(Schema):
     name = fields.String(required=True, validate=validate.Length(min=2, max=150))
     description = fields.String(allow_none=True, load_default=None)
+    is_archived = fields.Boolean(load_default=False)
     member_ids = fields.List(fields.Integer(strict=True), load_default=list)
 
 
@@ -124,3 +125,8 @@ class PublishResultsSchema(Schema):
     def validate_targets(self, data, **kwargs):
         if not data.get("exam_id") and not data.get("attempt_ids"):
             raise ValidationError("Provide exam_id or attempt_ids.")
+
+
+class RetakeRequestReviewSchema(Schema):
+    action = fields.String(required=True, validate=validate.OneOf(["approve", "reject"]))
+

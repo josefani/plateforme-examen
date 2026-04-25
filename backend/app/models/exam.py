@@ -379,3 +379,37 @@ class AuditLog(db.Model):
             "user_agent": self.user_agent,
             "created_at": serialize_datetime(self.created_at),
         }
+
+
+class RetakeRequest(TimestampMixin, db.Model):
+    __tablename__ = "retake_requests"
+    __table_args__ = (
+        db.UniqueConstraint("exam_id", "student_id", "status", name="uq_retake_pending"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    exam_id = db.Column(db.Integer, db.ForeignKey("exams.id", ondelete="CASCADE"), nullable=False, index=True)
+    student_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    attempt_id = db.Column(db.Integer, db.ForeignKey("attempts.id", ondelete="SET NULL"), nullable=True, index=True)
+    reason = db.Column(db.Text, nullable=True)
+    status = db.Column(db.String(20), nullable=False, default="pending", index=True)
+    reviewed_by_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed_at = db.Column(db.DateTime(timezone=True), nullable=True)
+
+    exam = db.relationship("Exam", backref="retake_requests")
+    student = db.relationship("User", foreign_keys=[student_id])
+    attempt = db.relationship("Attempt")
+    reviewed_by = db.relationship("User", foreign_keys=[reviewed_by_id])
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "exam_id": self.exam_id,
+            "student_id": self.student_id,
+            "attempt_id": self.attempt_id,
+            "reason": self.reason,
+            "status": self.status,
+            "reviewed_at": serialize_datetime(self.reviewed_at),
+            "created_at": serialize_datetime(self.created_at),
+            "updated_at": serialize_datetime(self.updated_at),
+        }

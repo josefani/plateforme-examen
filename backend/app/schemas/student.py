@@ -21,3 +21,7 @@ class AttemptEventSchema(Schema):
     def validate_details(self, data, **kwargs):
         if data.get("details") is None:
             raise ValidationError("details must be an object.", "details")
+
+
+class RetakeRequestSchema(Schema):
+    reason = fields.String(allow_none=True, load_default=None, validate=validate.Length(max=500))

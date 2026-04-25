@@ -143,6 +143,7 @@ class AdminService:
     def update_group(group: Group, payload: dict):
         group.name = payload["name"].strip()
         group.description = payload.get("description")
+        group.is_archived = payload.get("is_archived", group.is_archived)
         AdminService._sync_group_members(group, payload.get("member_ids", []))
         db.session.commit()
         return group
@@ -333,6 +334,14 @@ class AdminService:
         ]
 
     @staticmethod
+    def delete_assignment(assignment_id: int):
+        assignment = ExamAssignment.query.get(assignment_id)
+        if assignment is None:
+            raise ApiError("Assignment not found.", HTTPStatus.NOT_FOUND)
+        db.session.delete(assignment)
+        db.session.commit()
+
+    @staticmethod
     def pending_manual_grading():
         answers = (
             Answer.query.options(
@@ -359,6 +368,37 @@ class AdminService:
             }
             for answer in answers
         ]
+
+    @staticmethod
+    def get_attempt_detail(attempt_id: int):
+        attempt = (
+            Attempt.query.options(
+                joinedload(Attempt.answers).joinedload(Answer.question).joinedload(Question.choices),
+                joinedload(Attempt.student),
+                joinedload(Attempt.exam).joinedload(Exam.question_items).joinedload(ExamQuestion.question),
+                joinedload(Attempt.result),
+            )
+            .get(attempt_id)
+        )
+        if attempt is None:
+            raise ApiError("Attempt not found.", HTTPStatus.NOT_FOUND)
+
+        points_by_question = {item.question_id: item.points for item in attempt.exam.question_items}
+        answers_detail = []
+        for answer in attempt.answers:
+            question = answer.question
+            answers_detail.append({
+                "answer": answer.to_dict(),
+                "question": question.to_dict(include_correct_answers=True),
+                "max_points": float(points_by_question.get(question.id, 0)),
+            })
+
+        return {
+            "attempt": attempt.to_dict(include_answers=False),
+            "student": attempt.student.to_dict(),
+            "exam": attempt.exam.to_dict(include_questions=False),
+            "answers": answers_detail,
+        }
 
     @staticmethod
     def results_summary():
@@ -394,3 +434,55 @@ class AdminService:
         if any(ExamService._has_pending_manual_grading(attempt) for attempt in attempts):
             raise ApiError("Some attempts still require manual grading.", HTTPStatus.CONFLICT)
         return ExamService.publish_results(attempts, admin)
+
+    @staticmethod
+    def list_retake_requests():
+        from app.models.exam import RetakeRequest
+        requests = (
+            RetakeRequest.query.options(
+                joinedload(RetakeRequest.student),
+                joinedload(RetakeRequest.exam),
+                joinedload(RetakeRequest.reviewed_by),
+            )
+            .order_by(RetakeRequest.created_at.desc())
+            .all()
+        )
+        return [
+            {
+                **req.to_dict(),
+                "student": req.student.to_dict(),
+                "exam": req.exam.to_dict(include_questions=False),
+                "reviewed_by": req.reviewed_by.to_dict() if req.reviewed_by else None,
+            }
+            for req in requests
+        ]
+
+    @staticmethod
+    def review_retake_request(request_id: int, action: str, admin: User):
+        from app.models.exam import RetakeRequest
+        from app.utils.time import utcnow
+
+        req = RetakeRequest.query.options(
+            joinedload(RetakeRequest.student),
+            joinedload(RetakeRequest.exam),
+        ).get(request_id)
+        if req is None:
+            raise ApiError("Retake request not found.", HTTPStatus.NOT_FOUND)
+        if req.status != "pending":
+            raise ApiError("This request has already been reviewed.", HTTPStatus.CONFLICT)
+
+        req.reviewed_by = admin
+        req.reviewed_at = utcnow()
+
+        if action == "approve":
+            req.status = "approved"
+            # Delete the old attempt so the student can start again
+            old_attempt = Attempt.query.filter_by(exam_id=req.exam_id, student_id=req.student_id).first()
+            if old_attempt:
+                db.session.delete(old_attempt)
+        else:
+            req.status = "rejected"
+
+        db.session.commit()
+        return req
+
