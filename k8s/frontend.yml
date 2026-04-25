@@ -1,78 +1,73 @@
-apiVersion: v1
-kind: Service
-metadata:
-  name: frontend-service
-  namespace: plateforme-examen
-  labels:
-    app: frontend
-spec:
-  selector:
-    app: frontend
-  ports:
-    - protocol: TCP
-      port: 80
-      targetPort: 5173
-  type: ClusterIP
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: frontend
   namespace: plateforme-examen
   labels:
-    app: frontend
+    app.kubernetes.io/name: plateforme-examen
+    app.kubernetes.io/component: frontend
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: frontend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   template:
     metadata:
       labels:
         app: frontend
+        app.kubernetes.io/component: frontend
     spec:
-      imagePullSecrets:
-        - name: ghcr-creds
       containers:
         - name: frontend
-          image: ghcr.io/replace-me/plateforme-examen-frontend:latest
-          imagePullPolicy: IfNotPresent
-          workingDir: /app
-          command:
-            - sh
-            - -c
-            - npm install && npm run dev
-          env:
-            - name: CHOKIDAR_USEPOLLING
-              valueFrom:
-                configMapKeyRef:
-                  name: exam-config
-                  key: CHOKIDAR_USEPOLLING
-            - name: VITE_API_URL
-              valueFrom:
-                configMapKeyRef:
-                  name: exam-config
-                  key: VITE_API_URL
+          image: ghcr.io/GITHUB_ORG/GITHUB_REPO/frontend:latest
+          imagePullPolicy: Always
           ports:
-            - containerPort: 5173
+            - containerPort: 4173
               name: http
-          readinessProbe:
-            httpGet:
-              path: /
-              port: 5173
-            initialDelaySeconds: 45
-            periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /
-              port: 5173
-            initialDelaySeconds: 60
+              port: 4173
+            initialDelaySeconds: 15
             periodSeconds: 15
-            failureThreshold: 5
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 4173
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
           resources:
             requests:
-              cpu: 50m
-              memory: 64Mi
+              cpu: "50m"
+              memory: "128Mi"
             limits:
-              cpu: 250m
-              memory: 128Mi
+              cpu: "200m"
+              memory: "256Mi"
+      imagePullSecrets:
+        - name: ghcr-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+  namespace: plateforme-examen
+  labels:
+    app.kubernetes.io/name: plateforme-examen
+    app.kubernetes.io/component: frontend
+spec:
+  selector:
+    app: frontend
+  ports:
+    - port: 4173
+      targetPort: 4173
+      name: http
+  type: NodePort

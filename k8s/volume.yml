@@ -1,11 +1,16 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: postgres-data
+  name: postgres-pvc
   namespace: plateforme-examen
+  labels:
+    app.kubernetes.io/name: plateforme-examen
+    app.kubernetes.io/component: database
 spec:
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
       storage: 5Gi
+  # Décommentez si vous avez une StorageClass spécifique
+  # storageClassName: standard

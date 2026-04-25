@@ -2,19 +2,22 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: plateforme-examen
+  labels:
+    app.kubernetes.io/name: plateforme-examen
+    app.kubernetes.io/managed-by: github-actions
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: exam-config
+  name: plateforme-examen-config
   namespace: plateforme-examen
+  labels:
+    app.kubernetes.io/name: plateforme-examen
 data:
-  FLASK_APP: manage.py
-  FLASK_ENV: production
+  FLASK_APP: "manage.py"
+  FLASK_ENV: "production"
   ACCESS_EXPIRES_MINUTES: "30"
   REFRESH_EXPIRES_DAYS: "7"
   HEARTBEAT_GRACE_SECONDS: "120"
-  LOGIN_RATE_LIMIT: 5 per minute
-  CORS_ORIGINS: __CORS_ORIGINS__
-  CHOKIDAR_USEPOLLING: "true"
-  VITE_API_URL: __VITE_API_URL__
+  LOGIN_RATE_LIMIT: "5 per minute"
+  CORS_ORIGINS: "http://frontend-service:4173"
