@@ -191,6 +191,7 @@ jobs:
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
           JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
           CORS_ORIGINS: ${{ vars.CORS_ORIGINS || 'http://localhost,http://127.0.0.1' }}
+          VITE_API_URL: ${{ vars.VITE_API_URL || 'http://backend:5000/api' }}
         run: |
           set -euo pipefail
           cp -R k8s rendered-k8s
@@ -210,6 +211,7 @@ jobs:
           ESCAPED_SECRET_KEY="$(esc "$SECRET_KEY")"
           ESCAPED_JWT_SECRET_KEY="$(esc "$JWT_SECRET_KEY")"
           ESCAPED_CORS_ORIGINS="$(esc "$CORS_ORIGINS")"
+          ESCAPED_VITE_API_URL="$(esc "$VITE_API_URL")"
 
           find rendered-k8s -type f -name '*.yml' -print0 | xargs -0 sed -i "s|plateforme-examen|${ESCAPED_NAMESPACE}|g"
           find rendered-k8s -type f -name '*.yml' -print0 | xargs -0 sed -i "s|ghcr.io/replace-me/plateforme-examen-backend:latest|${ESCAPED_BACKEND_IMAGE}|g"
@@ -221,6 +223,7 @@ jobs:
           find rendered-k8s -type f -name '*.yml' -print0 | xargs -0 sed -i "s|__SECRET_KEY__|${ESCAPED_SECRET_KEY}|g"
           find rendered-k8s -type f -name '*.yml' -print0 | xargs -0 sed -i "s|__JWT_SECRET_KEY__|${ESCAPED_JWT_SECRET_KEY}|g"
           find rendered-k8s -type f -name '*.yml' -print0 | xargs -0 sed -i "s|__CORS_ORIGINS__|${ESCAPED_CORS_ORIGINS}|g"
+          find rendered-k8s -type f -name '*.yml' -print0 | xargs -0 sed -i "s|__VITE_API_URL__|${ESCAPED_VITE_API_URL}|g"
 
           cat > rendered-k8s/backend-migrate-job.yml <<EOF
           apiVersion: batch/v1

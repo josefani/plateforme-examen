@@ -11,7 +11,7 @@ spec:
   ports:
     - protocol: TCP
       port: 80
-      targetPort: 4173
+      targetPort: 5173
   type: ClusterIP
 ---
 apiVersion: apps/v1
@@ -36,22 +36,39 @@ spec:
       containers:
         - name: frontend
           image: ghcr.io/replace-me/plateforme-examen-frontend:latest
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
+          workingDir: /app
+          command:
+            - sh
+            - -c
+            - npm install && npm run dev
+          env:
+            - name: CHOKIDAR_USEPOLLING
+              valueFrom:
+                configMapKeyRef:
+                  name: exam-config
+                  key: CHOKIDAR_USEPOLLING
+            - name: VITE_API_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: exam-config
+                  key: VITE_API_URL
           ports:
-            - containerPort: 4173
+            - containerPort: 5173
               name: http
           readinessProbe:
             httpGet:
               path: /
-              port: 4173
-            initialDelaySeconds: 5
-            periodSeconds: 5
+              port: 5173
+            initialDelaySeconds: 45
+            periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /
-              port: 4173
-            initialDelaySeconds: 20
-            periodSeconds: 10
+              port: 5173
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            failureThreshold: 5
           resources:
             requests:
               cpu: 50m
