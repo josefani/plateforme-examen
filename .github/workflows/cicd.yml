@@ -1,4 +1,4 @@
-name: CI/CD — Plateforme Examen
+name: CI/CD — Plateforme Examen (SSH Deploy)
 
 on:
   push:
@@ -22,14 +22,11 @@ jobs:
     name: Build & Push Images
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
-
     permissions:
       contents: read
       packages: write
-
     outputs:
       image-tag: ${{ steps.slug.outputs.tag }}
-
     steps:
       - name: Checkout du code
         uses: actions/checkout@v4
@@ -48,7 +45,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # ── Backend ──
       - name: Build & Push backend
         uses: docker/build-push-action@v5
         with:
@@ -61,7 +57,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # ── Frontend ──
       - name: Build & Push frontend
         uses: docker/build-push-action@v5
         with:
@@ -77,73 +72,49 @@ jobs:
           cache-to: type=gha,mode=max
 
   # ────────────────────────────────────────────────
-  # 2. DEPLOY sur Kubernetes (main uniquement)
+  # 2. DEPLOY via SSH (main uniquement)
   # ────────────────────────────────────────────────
   deploy:
-    name: Deploy to Kubernetes
+    name: Deploy to Server via SSH
     runs-on: ubuntu-latest
     needs: build-and-push
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-
     environment:
       name: production
 
     steps:
-      - name: Checkout du code
-        uses: actions/checkout@v4
-
-      - name: Configurer kubectl
-        uses: azure/k8s-set-context@v4
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
         with:
-          method: kubeconfig
-          kubeconfig: ${{ secrets.KUBECONFIG }}
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            # On se déplace dans le dossier du projet sur le serveur
+            cd /path/to/your/project/k8s 
+            
+            # Récupération du tag généré par le job précédent
+            TAG=${{ needs.build-and-push.outputs.image-tag }}
+            
+            # Mise à jour des manifests (si nécessaire via git pull)
+            git pull origin main
 
-      - name: Créer/mettre à jour le secret GHCR
-        run: |
-          kubectl create secret docker-registry ghcr-secret \
-            --namespace=plateforme-examen \
-            --docker-server=ghcr.io \
-            --docker-username=${{ github.actor }} \
-            --docker-password=${{ secrets.GITHUB_TOKEN }} \
-            --dry-run=client -o yaml | kubectl apply -f -
+            # Connexion au registre (si nécessaire sur le serveur)
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-      # Applique tous les manifests du dossier k8s/
-      - name: Appliquer les manifests K8s
-        run: |
-          kubectl apply -f k8s/configmap.yaml
-          kubectl apply -f k8s/secrets.yaml
-          kubectl apply -f k8s/volume.yaml
-          kubectl apply -f k8s/database.yaml
-          kubectl apply -f k8s/backend.yaml
-          kubectl apply -f k8s/frontend.yaml
+            # Application des manifests
+            kubectl apply -f configmap.yaml
+            kubectl apply -f secrets.yaml
+            kubectl apply -f volume.yaml
+            kubectl apply -f database.yaml
+            kubectl apply -f backend.yaml
+            kubectl apply -f frontend.yaml
 
-      # Mise à jour des images avec le tag SHA exact
-      - name: Mettre à jour les images
-        run: |
-          TAG=${{ needs.build-and-push.outputs.image-tag }}
+            # Mise à jour des images
+            kubectl set image deployment/backend backend=${{ env.IMAGE_BACKEND }}:${TAG} -n plateforme-examen
+            kubectl set image deployment/frontend frontend=${{ env.IMAGE_FRONTEND }}:${TAG} -n plateforme-examen
 
-          kubectl set image deployment/backend \
-            backend=${{ env.IMAGE_BACKEND }}:${TAG} \
-            -n plateforme-examen
-
-          kubectl set image deployment/frontend \
-            frontend=${{ env.IMAGE_FRONTEND }}:${TAG} \
-            -n plateforme-examen
-
-      - name: Vérifier le rollout backend
-        run: |
-          kubectl rollout status deployment/backend \
-            -n plateforme-examen --timeout=120s
-
-      - name: Vérifier le rollout frontend
-        run: |
-          kubectl rollout status deployment/frontend \
-            -n plateforme-examen --timeout=120s
-
-      - name: Résumé du déploiement
-        run: |
-          echo "✅ Déploiement terminé — tag : ${{ needs.build-and-push.outputs.image-tag }}"
-          echo "────────────────────────────────"
-          kubectl get pods -n plateforme-examen
-          echo "────────────────────────────────"
-          kubectl get services -n plateforme-examen
+            # Vérification du déploiement
+            kubectl rollout status deployment/backend -n plateforme-examen --timeout=120s
+            kubectl rollout status deployment/frontend -n plateforme-examen --timeout=120s
