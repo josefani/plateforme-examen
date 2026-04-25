@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { AlertTriangle, ArrowLeft, ArrowRight, Save, Send } from 'lucide-react'
@@ -36,15 +36,8 @@ function isAnswerCompleted(answer: AnswerDraft) {
 }
 
 export function ExamSessionPage() {
-  const navigate = useNavigate()
-  const queryClient = useQueryClient()
   const { attemptId } = useParams()
   const numericAttemptId = Number(attemptId)
-  const [currentIndex, setCurrentIndex] = useState(0)
-  const [answers, setAnswers] = useState<Record<number, AnswerDraft>>({})
-  const [saveStatus, setSaveStatus] = useState('Brouillon synchronisé')
-  const [isDirty, setIsDirty] = useState(false)
-  const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false)
 
   const attemptQuery = useQuery({
     queryKey: ['student', 'attempt', numericAttemptId],
@@ -52,14 +45,29 @@ export function ExamSessionPage() {
     refetchOnWindowFocus: false,
   })
 
-  useEffect(() => {
-    if (attemptQuery.data?.item) {
-      setAnswers(buildDraftMap(attemptQuery.data.item))
-      setCurrentIndex(0)
-      setSaveStatus('Session chargée')
-      setIsDirty(false)
-    }
-  }, [attemptQuery.data?.item])
+  const payload = attemptQuery.data?.item
+  const currentQuestion = payload?.questions[0]
+
+  if (attemptQuery.isLoading || !payload || !currentQuestion) {
+    return <LoadingScreen label="Chargement de la session..." />
+  }
+
+  return <ExamSessionContent key={payload.attempt.id} payload={payload} numericAttemptId={numericAttemptId} />
+}
+
+interface ExamSessionContentProps {
+  payload: AttemptPayload
+  numericAttemptId: number
+}
+
+function ExamSessionContent({ payload, numericAttemptId }: ExamSessionContentProps) {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const [currentIndex, setCurrentIndex] = useState(0)
+  const [answers, setAnswers] = useState<Record<number, AnswerDraft>>(() => buildDraftMap(payload))
+  const [saveStatus, setSaveStatus] = useState('Session chargée')
+  const [isDirty, setIsDirty] = useState(false)
+  const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false)
 
   const saveMutation = useMutation({
     mutationFn: async (saveMode: 'autosave' | 'manual') =>
@@ -100,44 +108,44 @@ export function ExamSessionPage() {
     },
   })
 
-  const performEvent = useEffectEvent((eventType: string, details?: Record<string, unknown>) => {
+  const performEvent = (eventType: string, details?: Record<string, unknown>) => {
     eventMutation.mutate({
       event_type: eventType,
       details,
     })
-  })
+  }
 
-  const performSave = useEffectEvent((saveMode: 'autosave' | 'manual') => {
+  const performSave = (saveMode: 'autosave' | 'manual') => {
     if (!Object.keys(answers).length) {
       return
     }
     setSaveStatus(saveMode === 'autosave' ? 'Autosauvegarde en cours...' : 'Sauvegarde en cours...')
     saveMutation.mutate(saveMode)
-  })
+  }
 
   useEffect(() => {
     const interval = window.setInterval(() => {
-      if (isDirty && attemptQuery.data?.item.attempt.status === 'in_progress') {
+      if (isDirty && payload.attempt.status === 'in_progress') {
         performSave('autosave')
       }
     }, 15_000)
 
     return () => window.clearInterval(interval)
-  }, [attemptQuery.data?.item.attempt.status, isDirty, performSave])
+  }, [isDirty, payload.attempt.status, answers])
 
   useEffect(() => {
     const interval = window.setInterval(() => {
-      if (attemptQuery.data?.item.attempt.status === 'in_progress') {
+      if (payload.attempt.status === 'in_progress') {
         heartbeatMutation.mutate()
       }
     }, 30_000)
 
     return () => window.clearInterval(interval)
-  }, [attemptQuery.data?.item.attempt.status, heartbeatMutation])
+  }, [payload.attempt.status, heartbeatMutation])
 
   useEffect(() => {
     const onVisibilityChange = async () => {
-      if (document.hidden && attemptQuery.data?.item.attempt.status === 'in_progress') {
+      if (document.hidden && payload.attempt.status === 'in_progress') {
         performEvent('visibility_hidden', { at: new Date().toISOString() })
         toast.error("Changement d'onglet détecté — examen terminé automatiquement.", { duration: 6000 })
         try {
@@ -193,7 +201,7 @@ export function ExamSessionPage() {
       document.removeEventListener('copy', preventCopy)
       document.removeEventListener('contextmenu', preventContextMenu)
     }
-  }, [performEvent, attemptQuery.data?.item.attempt.status, isDirty, saveMutation, submitMutation, navigate])
+  }, [payload.attempt.status, isDirty, saveMutation, submitMutation, navigate, answers])
 
   const handleSubmit = async () => {
     if (isDirty) {
@@ -211,7 +219,6 @@ export function ExamSessionPage() {
     setIsDirty(true)
   }
 
-  const payload = attemptQuery.data?.item
   const questions = payload?.questions ?? []
   const currentQuestion = questions[currentIndex]
 
@@ -219,10 +226,6 @@ export function ExamSessionPage() {
     () => questions.filter((item) => isAnswerCompleted(answers[item.question.id] ?? item.answer)).length,
     [answers, questions],
   )
-
-  if (attemptQuery.isLoading || !payload || !currentQuestion) {
-    return <LoadingScreen label="Chargement de la session..." />
-  }
 
   return (
     <div className="space-y-6">

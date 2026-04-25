@@ -14,7 +14,7 @@ import {
   Users,
   X,
 } from 'lucide-react'
-import { Link, NavLink, useNavigate, useLocation } from 'react-router-dom'
+import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../store/auth-store'
 import type { Role } from '../../types/api'
 
@@ -41,15 +41,9 @@ const navItems = {
 
 export function AppShell({ role, children }: AppShellProps) {
   const navigate = useNavigate()
-  const location = useLocation()
   const { user, clearSession } = useAuthStore()
   const [collapsed, setCollapsed] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-
-  // Close mobile menu on route change
-  useEffect(() => {
-    setMobileMenuOpen(false)
-  }, [location.pathname])
 
   // Prevent body scroll when mobile menu is open
   useEffect(() => {
@@ -104,6 +98,7 @@ export function AppShell({ role, children }: AppShellProps) {
           <NavLink
             key={item.to}
             to={item.to}
+            onClick={() => setMobileMenuOpen(false)}
             className={({ isActive }) =>
               `flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition ${
                 isActive
