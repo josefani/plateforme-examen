@@ -130,8 +130,11 @@ jobs:
       - name: Export image refs
         id: export
         run: |
-          echo "backend_image=${BACKEND_IMAGE_NAME}:sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-          echo "frontend_image=${FRONTEND_IMAGE_NAME}:sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          # FIX: Use the full SHA to match exactly what docker/metadata-action generates
+          # metadata-action produces: sha-<full_40_char_sha>
+          FULL_SHA="${GITHUB_SHA}"
+          echo "backend_image=${BACKEND_IMAGE_NAME}:sha-${FULL_SHA}" >> "$GITHUB_OUTPUT"
+          echo "frontend_image=${FRONTEND_IMAGE_NAME}:sha-${FULL_SHA}" >> "$GITHUB_OUTPUT"
 
   deploy:
     name: Deploy to Remote k3s
@@ -302,6 +305,15 @@ jobs:
 
           ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "
             set -euo pipefail
+
+            # FIX: Dump pods and recent events automatically on any failure for easier debugging
+            trap '
+              echo \"=== Pods ===\"
+              \$KUBECTL get pods -n $remote_namespace
+              echo \"=== Recent events ===\"
+              \$KUBECTL get events -n $remote_namespace --sort-by=.lastTimestamp | tail -30
+            ' ERR
+
             cd $remote_workdir/rendered-k8s
 
             if command -v k3s >/dev/null 2>&1; then
@@ -328,9 +340,15 @@ jobs:
             \$KUBECTL apply -f backend-migrate-job.yml
             \$KUBECTL wait --for=condition=complete job/backend-migrate-seed -n $remote_namespace --timeout=180s
 
+            # FIX: Deploy and wait for backend to be fully Ready before starting frontend.
+            # This prevents frontend crashloops caused by hitting an unavailable backend
+            # during its own startup health checks.
             \$KUBECTL apply -f backend.yml
-            \$KUBECTL apply -f frontend.yml
+            \$KUBECTL rollout status deployment/backend -n $remote_namespace --timeout=240s
 
-            \$KUBECTL rollout status deployment/backend -n $remote_namespace --timeout=180s
-            \$KUBECTL rollout status deployment/frontend -n $remote_namespace --timeout=180s
+            # FIX: Only apply and wait for frontend once backend is confirmed healthy.
+            # FIX: Increased timeout to 300s to give the rolling update enough time
+            # to pull the image from GHCR and terminate the old replica cleanly.
+            \$KUBECTL apply -f frontend.yml
+            \$KUBECTL rollout status deployment/frontend -n $remote_namespace --timeout=300s
           "
