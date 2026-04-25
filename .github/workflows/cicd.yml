@@ -277,12 +277,16 @@ jobs:
           remote_workdir="$(printf '%q' "$REMOTE_APP_DIR")"
           ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "mkdir -p $remote_workdir/rendered-k8s"
 
-      - name: Sync rendered manifests
+      - name: Clean remote manifest directory
         run: |
           set -euo pipefail
-          rsync -az --delete \
-            -e "ssh -p $SSH_PORT" \
-            rendered-k8s/ "$SSH_USER@$SSH_HOST:$REMOTE_APP_DIR/rendered-k8s/"
+          remote_workdir="$(printf '%q' "$REMOTE_APP_DIR")"
+          ssh -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "rm -rf $remote_workdir/rendered-k8s/*"
+
+      - name: Copy rendered manifests
+        run: |
+          set -euo pipefail
+          scp -P "$SSH_PORT" -r rendered-k8s/* "$SSH_USER@$SSH_HOST:$REMOTE_APP_DIR/rendered-k8s/"
 
       - name: Deploy on remote server
         run: |
