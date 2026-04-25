@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: plateforme-examen
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: exam-config
+  namespace: plateforme-examen
+data:
+  FLASK_APP: manage.py
+  FLASK_ENV: production
+  ACCESS_EXPIRES_MINUTES: "30"
+  REFRESH_EXPIRES_DAYS: "7"
+  HEARTBEAT_GRACE_SECONDS: "120"
+  LOGIN_RATE_LIMIT: 5 per minute
+  CORS_ORIGINS: __CORS_ORIGINS__
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-gateway-config
+  namespace: plateforme-examen
+data:
+  default.conf: |
+    server {
+      listen 80;
+      server_name _;
+
+      client_max_body_size 10m;
+
+      location /api/ {
+        proxy_pass http://backend:5000/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+      }
+
+      location = /health {
+        proxy_pass http://backend:5000/health;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+      }
+
+      location / {
+        proxy_pass http://frontend:80;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+      }
+    }

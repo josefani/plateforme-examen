@@ -1,8 +1,10 @@
 .codex
 .env
 
-.dockerignore
-
 node_modules/
 __pycache__
 .venv
+
+# Docker build cache et fichiers temporaires
+.docker/
+**/sha256:*
