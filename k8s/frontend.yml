@@ -24,26 +24,20 @@ spec:
     spec:
       containers:
         - name: frontend
-          # Remplacé au déploiement par : DOCKER_USERNAME/plateforme-frontend:TAG
           image: FRONTEND_IMAGE_TAG
           imagePullPolicy: Always
           ports:
             - containerPort: 4173
               name: http
+          # --- DEBUT DE LA CORRECTION ---
           livenessProbe:
-          env:
-            - name: VITE_API_URL
-              valueFrom:
-                configMapKeyRef:
-                  name: plateforme-examen-config
-                  key: VITE_API_URL
-          httpGet:
-            path: /
-            port: 4173
-          initialDelaySeconds: 15
-          periodSeconds: 15
-          timeoutSeconds: 5
-          failureThreshold: 3
+            httpGet:
+              path: /
+              port: 4173
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /
@@ -52,6 +46,18 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 3
+          env:
+            - name: CHOKIDAR_USEPOLLING
+              valueFrom:
+                configMapKeyRef:
+                  name: plateforme-examen-config
+                  key: CHOKIDAR_USEPOLLING
+            - name: VITE_API_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: plateforme-examen-config
+                  key: VITE_API_URL
+          # --- FIN DE LA CORRECTION ---
           resources:
             requests:
               cpu: "50m"
@@ -59,8 +65,6 @@ spec:
             limits:
               cpu: "200m"
               memory: "256Mi"
-      # FIX : suppression de imagePullSecrets ghcr-secret
-      # Les images sont sur Docker Hub (public) → pas de secret nécessaire
 ---
 apiVersion: v1
 kind: Service

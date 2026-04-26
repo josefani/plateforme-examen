@@ -24,3 +24,4 @@ data:
   # Ex: https://ton-domaine.com ou http://<IP_SERVEUR>:<NODE_PORT>
   CORS_ORIGINS: "CHANGEME_cors_origins"
   VITE_API_URL: 'backend-service:default:svc.cluster.local:5000'
+  CHOKIDAR_USEPOLLING: 'true'
