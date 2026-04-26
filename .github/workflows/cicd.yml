@@ -149,61 +149,47 @@ jobs:
 
       - name: Deploy on K3s
         run: |
+          # On définit la variable locale pour le runner GitHub
+          TARGET_DIR="${{ vars.K8S_WORKDIR }}"
+
           ssh -i ~/.ssh/plateforme \
               -o StrictHostKeyChecking=no \
               ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << EOF
 
             set -e
             NAMESPACE=plateforme-examen
+            
+            # On utilise la variable TARGET_DIR que SSH a récupéré du runner
+            WORK_DIR="$TARGET_DIR"
+            echo "Utilisation du répertoire de travail : \$WORK_DIR"
 
-            # ── Injection des vraies valeurs dans secrets.yml ──
-            # Les valeurs CHANGEME_* sont remplacées par les secrets GitHub
-            sed -i "s|CHANGEME_postgres_password|${{ secrets.POSTGRES_PASSWORD }}|g" /tmp/k8s-examen/secrets.yml
-            sed -i "s|CHANGEME_secret_key|${{ secrets.SECRET_KEY }}|g"               /tmp/k8s-examen/secrets.yml
-            sed -i "s|CHANGEME_jwt_secret_key|${{ secrets.JWT_SECRET_KEY }}|g"       /tmp/k8s-examen/secrets.yml
+            # ── Injection des secrets ──
+            sed -i "s|CHANGEME_postgres_password|${{ secrets.POSTGRES_PASSWORD }}|g" \$WORK_DIR/secrets.yml
+            sed -i "s|CHANGEME_secret_key|${{ secrets.SECRET_KEY }}|g"               \$WORK_DIR/secrets.yml
+            sed -i "s|CHANGEME_jwt_secret_key|${{ secrets.JWT_SECRET_KEY }}|g"       \$WORK_DIR/secrets.yml
 
-            # ── Injection de CORS_ORIGINS dans configmap.yml ──
-            sed -i "s|CHANGEME_cors_origins|${{ secrets.CORS_ORIGINS }}|g" /tmp/k8s-examen/configmap.yml
+            # ── Injection ConfigMap ──
+            sed -i "s|CHANGEME_cors_origins|${{ secrets.CORS_ORIGINS }}|g" \$WORK_DIR/configmap.yml
 
-            # ── Injection des images Docker Hub dans les manifests ──
-            # Les fichiers backend.yml et frontend.yml contiennent BACKEND_IMAGE_TAG / FRONTEND_IMAGE_TAG
-            sed -i "s|BACKEND_IMAGE_TAG|${{ env.IMAGE_BACKEND }}:${{ env.TAG }}|g"   /tmp/k8s-examen/backend.yml
-            sed -i "s|FRONTEND_IMAGE_TAG|${{ env.IMAGE_FRONTEND }}:${{ env.TAG }}|g" /tmp/k8s-examen/frontend.yml
+            # ── Injection Images ──
+            sed -i "s|BACKEND_IMAGE_TAG|${{ env.IMAGE_BACKEND }}:${{ env.TAG }}|g"   \$WORK_DIR/backend.yml
+            sed -i "s|FRONTEND_IMAGE_TAG|${{ env.IMAGE_FRONTEND }}:${{ env.TAG }}|g" \$WORK_DIR/frontend.yml
 
-            # ── Namespace ──
-            kubectl apply -f /tmp/k8s-examen/configmap.yml
+            # ── Application des manifests avec le bon chemin ──
+            kubectl apply -f \$WORK_DIR/configmap.yml -n \$NAMESPACE
+            kubectl apply -f \$WORK_DIR/secrets.yml -n \$NAMESPACE
+            kubectl apply -f \$WORK_DIR/volume.yml -n \$NAMESPACE
+            kubectl apply -f \$WORK_DIR/database.yml -n \$NAMESPACE
 
-            # ── ConfigMap ──
-            kubectl apply -f /tmp/k8s-examen/configmap.yml -n \$NAMESPACE
-
-            # ── Secrets ──
-            kubectl apply -f /tmp/k8s-examen/secrets.yml -n \$NAMESPACE
-
-            # ── Volume (PVC postgres-pvc) ──
-            # Doit être créé avant le déploiement de postgres
-            kubectl apply -f /tmp/k8s-examen/volume.yml -n \$NAMESPACE
-
-            # ── Base de données ──
-            kubectl apply -f /tmp/k8s-examen/database.yml -n \$NAMESPACE
-
-            # Attendre que postgres soit ready (readinessProbe pg_isready)
-            # timeout 120s pour laisser le temps de puller l'image + monter le PVC
             kubectl rollout status deployment/postgres -n \$NAMESPACE --timeout=120s
 
-            # ── Backend ──
-            kubectl apply -f /tmp/k8s-examen/backend.yml -n \$NAMESPACE
-            # FIX : nom réel du deployment = "backend" (pas "plateforme-backend")
-            kubectl rollout status deployment/backend -n \$NAMESPACE --timeout=20000s
+            kubectl apply -f \$WORK_DIR/backend.yml -n \$NAMESPACE
+            kubectl rollout status deployment/backend -n \$NAMESPACE --timeout=120s
 
-            # ── Frontend ──
-            kubectl apply -f /tmp/k8s-examen/frontend.yml -n \$NAMESPACE
-            # FIX : nom réel du deployment = "frontend" (pas "plateforme-frontend")
+            kubectl apply -f \$WORK_DIR/frontend.yml -n \$NAMESPACE
             kubectl rollout status deployment/frontend -n \$NAMESPACE --timeout=120s
 
-            # Nettoyage
-            #rm -rf /tmp/k8s-examen
-
-            echo "✅ Déploiement terminé avec succès."
+            echo "✅ Déploiement terminé avec succès dans \$WORK_DIR."
           EOF
   # ─────────────────────────────────────
   # 5. ANALYSE DE SÉCURITÉ DYNAMIQUE (DAST)
