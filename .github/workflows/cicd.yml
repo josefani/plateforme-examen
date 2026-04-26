@@ -7,12 +7,9 @@ on:
     branches: [main]
 
 env:
-  # Docker Hub images
+  # Pas d'image DB custom : on utilise postgres:16-alpine directement dans K8s
   IMAGE_FRONTEND: ${{ secrets.DOCKER_USERNAME }}/plateforme-frontend
   IMAGE_BACKEND: ${{ secrets.DOCKER_USERNAME }}/plateforme-backend
-  # Note : Si tu utilises l'image postgres:16-alpine officielle sans modif, 
-  # pas besoin de la build. Sinon, garde cette ligne :
-  IMAGE_DATABASE: ${{ secrets.DOCKER_USERNAME }}/plateforme-db
 
 jobs:
   # ─────────────────────────────────────
@@ -24,35 +21,42 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Backend Tests
+      # ── Backend Tests ──
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
+
       - name: Install Backend Deps
         working-directory: ./backend
         run: pip install -r requirements.txt
+
       - name: Pytest
         working-directory: ./backend
-        run: pytest || echo "No tests found or failing"
+        # Pas de "|| echo" : le job échoue vraiment si les tests ratent
+        run: pytest
 
-      # Frontend Tests
+      # ── Frontend Tests ──
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
           cache-dependency-path: ./frontend/package-lock.json
+
       - name: Install Frontend Deps
         working-directory: ./frontend
         run: npm ci
-      - name: Lint/Test Frontend
+
+      - name: Build Frontend
         working-directory: ./frontend
-        run: npm run build # On vérifie au moins que ça compile
+        run: npm run build
 
   # ─────────────────────────────────────
   # 2. BUILD & PUSH (Docker Hub)
+  # Seulement backend + frontend.
+  # La DB utilise postgres:16-alpine officielle → pas de build custom.
   # ─────────────────────────────────────
   build-push:
     name: Build & Push Images
@@ -61,7 +65,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set image tag
         run: echo "TAG=${GITHUB_SHA::7}" >> $GITHUB_ENV
 
@@ -85,24 +89,15 @@ jobs:
         with:
           context: ./frontend
           push: true
-          # Injection de l'URL API au moment du Build (comme dans ton compose)
+          # VITE_API_URL injectée au build comme dans le docker-compose
           build-args: |
             VITE_API_URL=${{ secrets.VITE_API_URL }}
           tags: |
             ${{ env.IMAGE_FRONTEND }}:${{ env.TAG }}
             ${{ env.IMAGE_FRONTEND }}:latest
 
-      # Optionnel : Build de la DB si tu as un Dockerfile dans ./database
-      # Sinon, ignore cette étape et utilise l'image postgres:16-alpine dans tes YAML K8s
-      - name: Build & Push Database
-        uses: docker/build-push-action@v5
-        with:
-          context: ./database
-          push: true
-          tags: ${{ env.IMAGE_DATABASE }}:latest
-
   # ─────────────────────────────────────
-  # 3. DÉPLOIEMENT (K3s via SSH)
+  # 3. CONNEXION SSH + DÉPLOIEMENT (K3s)
   # ─────────────────────────────────────
   deploy:
     name: Deploy to K3s
@@ -115,36 +110,77 @@ jobs:
       - name: Set image tag
         run: echo "TAG=${GITHUB_SHA::7}" >> $GITHUB_ENV
 
+      # Connexion SSH sécurisée avec known_hosts hardcodé (anti-MITM)
+      # Pour générer SERVER_KNOWN_HOSTS : ssh-keyscan <SERVER_HOST>
       - name: Configure SSH
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+          echo "${{ secrets.SERVER_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
 
       - name: Deploy on K3s
         run: |
-          # On copie les manifests K8s sur le serveur
+          # Copie des manifests K8s sur le serveur
           scp -r ./k8s ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/k8s-examen
 
-          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << EOF
-            # Remplacement des tags dans les fichiers YAML
-            sed -i "s|image: .*backend.*|image: ${{ env.IMAGE_BACKEND }}:${{ env.TAG }}|g" /tmp/k8s-examen/backend.yml
-            sed -i "s|image: .*frontend.*|image: ${{ env.IMAGE_FRONTEND }}:${{ env.TAG }}|g" /tmp/k8s-examen/frontend.yml
-            
-            # Application des manifests
+          # Injection des tags d'image dans les placeholders des YAML K8s
+          # Tes fichiers backend.yml et frontend.yml doivent contenir :
+          #   image: BACKEND_IMAGE_TAG  (dans backend.yml)
+          #   image: FRONTEND_IMAGE_TAG (dans frontend.yml)
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} \
+            "sed -i \
+              's|BACKEND_IMAGE_TAG|${{ env.IMAGE_BACKEND }}:${{ env.TAG }}|g; \
+               s|FRONTEND_IMAGE_TAG|${{ env.IMAGE_FRONTEND }}:${{ env.TAG }}|g' \
+            /tmp/k8s-examen/backend.yml /tmp/k8s-examen/frontend.yml"
+
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
+            set -e  # Arrête immédiatement si une commande échoue
+
+            # ── ConfigMap ──
+            # Contient : FLASK_APP, FLASK_ENV, ACCESS_EXPIRES_MINUTES,
+            # REFRESH_EXPIRES_DAYS, HEARTBEAT_GRACE_SECONDS,
+            # LOGIN_RATE_LIMIT, CORS_ORIGINS
             kubectl apply -f /tmp/k8s-examen/configmap.yml
-            kubectl apply -f /tmp/k8s-examen/secrets.yml
+
+            # ── Secrets K8s ──
+            # Contient : DATABASE_URL, SECRET_KEY, JWT_SECRET_KEY
+            # Ce fichier NE DOIT PAS être commité dans Git.
+            # Il doit être créé manuellement sur le serveur :
+            #   kubectl create secret generic plateforme-secrets \
+            #     --from-literal=DATABASE_URL="postgresql+psycopg://..." \
+            #     --from-literal=SECRET_KEY="..." \
+            #     --from-literal=JWT_SECRET_KEY="..."
+            # On l'applique uniquement s'il est présent dans les manifests
+            if [ -f /tmp/k8s-examen/secrets.yml ]; then
+              kubectl apply -f /tmp/k8s-examen/secrets.yml
+            fi
+
+            # ── Base de données ──
+            # Le manifest database.yml doit utiliser image: postgres:16-alpine
+            # et inclure une readinessProbe pour reproduire le healthcheck du compose :
+            #   readinessProbe:
+            #     exec:
+            #       command: ["pg_isready", "-U", "$(POSTGRES_USER)", "-d", "$(POSTGRES_DB)"]
+            #     initialDelaySeconds: 5
+            #     periodSeconds: 10
             kubectl apply -f /tmp/k8s-examen/database.yml
-            
-            # Wait for DB to be ready
-            kubectl rollout status deployment/plateforme-db --timeout=60s
-            
+
+            # Attendre que la DB soit ready avant de déployer le backend
+            # (équivalent du depends_on + condition: service_healthy du compose)
+            kubectl rollout status deployment/plateforme-db --timeout=90s
+
+            # ── Backend ──
             kubectl apply -f /tmp/k8s-examen/backend.yml
+            kubectl rollout status deployment/plateforme-backend --timeout=60s
+
+            # ── Frontend ──
             kubectl apply -f /tmp/k8s-examen/frontend.yml
-            
+            kubectl rollout status deployment/plateforme-frontend --timeout=60s
+
             # Nettoyage
             rm -rf /tmp/k8s-examen
-          EOF
 
-#iooyoooioyoy
+            echo "✅ Déploiement terminé avec succès."
+          EOF
