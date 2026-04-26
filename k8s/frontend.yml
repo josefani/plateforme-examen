@@ -31,13 +31,24 @@ spec:
             - containerPort: 4173
               name: http
           livenessProbe:
-            httpGet:
-              path: /
-              port: 4173
-            initialDelaySeconds: 15
-            periodSeconds: 15
-            timeoutSeconds: 5
-            failureThreshold: 3
+          env:
+            - name: CHOKIDAR_USEPOLLING
+              valueFrom:
+                configMapKeyRef:
+                  name: application-config
+                  key: CHOKIDAR_USEPOLLING
+            - name: VITE_API_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: application-config
+                  key: VITE_API_URL
+          httpGet:
+            path: /
+            port: 4173
+          initialDelaySeconds: 15
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /
