@@ -14,6 +14,8 @@ metadata:
   labels:
     app.kubernetes.io/name: plateforme-examen
 data:
+  BACKEND_PORT: "5000"
+  FRONTEND_PORT: "4173"
   FLASK_APP: "manage.py"
   FLASK_ENV: "production"
   ACCESS_EXPIRES_MINUTES: "30"
@@ -22,6 +24,7 @@ data:
   LOGIN_RATE_LIMIT: "5 per minute"
   # Remplacé au déploiement par le secret GitHub CORS_ORIGINS
   # Ex: https://ton-domaine.com ou http://<IP_SERVEUR>:<NODE_PORT>
-  CORS_ORIGINS: "CHANGEME_cors_origins"
-  VITE_API_URL: 'backend-service:default:svc.cluster.local:5000'
+  CORS_ORIGINS: "CHANGEMENT_cors_origins"
+  VITE_API_URL: "http://34.10.229.174:5000/api"
+  API_UPSTREAM: "backend:5000"
   CHOKIDAR_USEPOLLING: 'true'

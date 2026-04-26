@@ -57,7 +57,6 @@ spec:
                 configMapKeyRef:
                   name: plateforme-examen-config
                   key: VITE_API_URL
-          # --- FIN DE LA CORRECTION ---
           resources:
             requests:
               cpu: "50m"
