@@ -10,6 +10,8 @@ env:
   # Pas d'image DB custom : on utilise postgres:16-alpine directement dans K8s
   IMAGE_FRONTEND: ${{ secrets.DOCKER_USERNAME }}/plateforme-frontend
   IMAGE_BACKEND: ${{ secrets.DOCKER_USERNAME }}/plateforme-backend
+  # Namespace K8s utilisé pour tous les déploiements
+  K8S_NAMESPACE: plateforme-examen
 
 jobs:
   # ─────────────────────────────────────
@@ -147,11 +149,13 @@ jobs:
           ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
             set -e  # Arrête immédiatement si une commande échoue
 
+            NAMESPACE=plateforme-examen
+
             # ── ConfigMap ──
             # Contient : FLASK_APP, FLASK_ENV, ACCESS_EXPIRES_MINUTES,
             # REFRESH_EXPIRES_DAYS, HEARTBEAT_GRACE_SECONDS,
             # LOGIN_RATE_LIMIT, CORS_ORIGINS
-            kubectl apply -f /tmp/k8s-examen/configmap.yml
+            kubectl apply -f /tmp/k8s-examen/configmap.yml -n $NAMESPACE
 
             # ── Secrets K8s ──
             # Contient : DATABASE_URL, SECRET_KEY, JWT_SECRET_KEY
@@ -160,9 +164,10 @@ jobs:
             #   kubectl create secret generic plateforme-secrets \
             #     --from-literal=DATABASE_URL="postgresql+psycopg://..." \
             #     --from-literal=SECRET_KEY="..." \
-            #     --from-literal=JWT_SECRET_KEY="..."
+            #     --from-literal=JWT_SECRET_KEY="..." \
+            #     -n plateforme-examen
             if [ -f /tmp/k8s-examen/secrets.yml ]; then
-              kubectl apply -f /tmp/k8s-examen/secrets.yml
+              kubectl apply -f /tmp/k8s-examen/secrets.yml -n $NAMESPACE
             fi
 
             # ── Base de données ──
@@ -173,20 +178,19 @@ jobs:
             #       command: ["pg_isready", "-U", "$(POSTGRES_USER)", "-d", "$(POSTGRES_DB)"]
             #     initialDelaySeconds: 5
             #     periodSeconds: 10
-            kubectl apply -f /tmp/k8s-examen/database.yml
+            kubectl apply -f /tmp/k8s-examen/database.yml -n $NAMESPACE
 
-            # FIX : le deployment postgres s'appelle "postgres" dans les manifests K8s
-            # (et non "plateforme-db" comme supposé initialement)
-            # Pour vérifier les vrais noms : kubectl get deployments -n plateforme-examen
-            kubectl rollout status deployment/postgres --timeout=90s
+            # FIX : ajout de "-n $NAMESPACE" pour que kubectl rollout status
+            # cherche dans le bon namespace et non dans "default"
+            kubectl rollout status deployment/postgres -n $NAMESPACE --timeout=90s
 
             # ── Backend ──
-            kubectl apply -f /tmp/k8s-examen/backend.yml
-            kubectl rollout status deployment/plateforme-backend --timeout=60s
+            kubectl apply -f /tmp/k8s-examen/backend.yml -n $NAMESPACE
+            kubectl rollout status deployment/plateforme-backend -n $NAMESPACE --timeout=60s
 
             # ── Frontend ──
-            kubectl apply -f /tmp/k8s-examen/frontend.yml
-            kubectl rollout status deployment/plateforme-frontend --timeout=60s
+            kubectl apply -f /tmp/k8s-examen/frontend.yml -n $NAMESPACE
+            kubectl rollout status deployment/plateforme-frontend -n $NAMESPACE --timeout=60s
 
             # Nettoyage
             rm -rf /tmp/k8s-examen
