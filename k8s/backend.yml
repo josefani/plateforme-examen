@@ -36,7 +36,6 @@ spec:
               echo "PostgreSQL est prêt."
       containers:
         - name: backend
-          # Remplacé au déploiement par : DOCKER_USERNAME/plateforme-backend:TAG
           image: BACKEND_IMAGE_TAG
           imagePullPolicy: Always
           ports:
@@ -107,17 +106,17 @@ spec:
               value: "postgresql+psycopg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@db:5432/$(POSTGRES_DB)"
           livenessProbe:
             httpGet:
-              path: /api/health
+              path: /  # CHANGÉ : /api/health renvoyait une 404
               port: 5000
-            initialDelaySeconds: 30
+            initialDelaySeconds: 45 # AUGMENTÉ : Laisse plus de temps au démarrage
             periodSeconds: 15
             timeoutSeconds: 5
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /api/health
+              path: /  # CHANGÉ : /api/health renvoyait une 404
               port: 5000
-            initialDelaySeconds: 15
+            initialDelaySeconds: 30 # AUGMENTÉ : Évite de tester trop tôt
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 3
@@ -128,8 +127,6 @@ spec:
             limits:
               cpu: "500m"
               memory: "512Mi"
-      # FIX : suppression de imagePullSecrets ghcr-secret
-      # Les images sont sur Docker Hub (public) → pas de secret nécessaire
 ---
 apiVersion: v1
 kind: Service
