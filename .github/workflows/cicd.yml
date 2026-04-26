@@ -120,7 +120,7 @@ jobs:
           scp -i ~/.ssh/plateforme \
               -o StrictHostKeyChecking=no \
               -r ./k8s \
-              ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/k8s-examen
+              ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/opt/k8s-examen
 
       - name: Deploy on K3s
         run: |
@@ -146,20 +146,20 @@ jobs:
             sed -i "s|FRONTEND_IMAGE_TAG|${{ env.IMAGE_FRONTEND }}:${{ env.TAG }}|g" /tmp/k8s-examen/frontend.yml
 
             # ── Namespace ──
-            kubectl apply -f /tmp/k8s-examen/configmap.yml
+            kubectl apply -f /opt/k8s-examen/configmap.yml
 
             # ── ConfigMap ──
-            kubectl apply -f /tmp/k8s-examen/configmap.yml -n \$NAMESPACE
+            kubectl apply -f /opt/k8s-examen/configmap.yml -n \$NAMESPACE
 
             # ── Secrets ──
-            kubectl apply -f /tmp/k8s-examen/secrets.yml -n \$NAMESPACE
+            kubectl apply -f /opt/k8s-examen/secrets.yml -n \$NAMESPACE
 
             # ── Volume (PVC postgres-pvc) ──
             # Doit être créé avant le déploiement de postgres
-            kubectl apply -f /tmp/k8s-examen/volume.yml -n \$NAMESPACE
+            kubectl apply -f /opt/k8s-examen/volume.yml -n \$NAMESPACE
 
             # ── Base de données ──
-            kubectl apply -f /tmp/k8s-examen/database.yml -n \$NAMESPACE
+            kubectl apply -f /opt/k8s-examen/database.yml -n \$NAMESPACE
 
             # Attendre que postgres soit ready (readinessProbe pg_isready)
             # timeout 120s pour laisser le temps de puller l'image + monter le PVC
@@ -171,7 +171,7 @@ jobs:
             #kubectl rollout status deployment/backend -n \$NAMESPACE --timeout=1000s
 
             # ── Frontend ──
-            kubectl apply -f /tmp/k8s-examen/frontend.yml -n \$NAMESPACE
+            kubectl apply -f /opt/k8s-examen/frontend.yml -n \$NAMESPACE
             # FIX : nom réel du deployment = "frontend" (pas "plateforme-frontend")
             kubectl rollout status deployment/frontend -n \$NAMESPACE --timeout=120s
 
