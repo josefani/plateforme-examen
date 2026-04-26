@@ -80,4 +80,5 @@ spec:
     - port: 4173
       targetPort: 4173
       name: http
+      nodePort: 33333
   type: NodePort

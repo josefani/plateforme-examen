@@ -142,5 +142,4 @@ spec:
     - port: 5000
       targetPort: 5000
       name: http
-      nodePort: 30500
   type: NodePort
