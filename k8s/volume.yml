@@ -12,5 +12,3 @@ spec:
   resources:
     requests:
       storage: 5Gi
-  # Décommentez si vous avez une StorageClass spécifique
-  # storageClassName: standard

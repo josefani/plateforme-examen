@@ -29,7 +29,6 @@ spec:
           ports:
             - containerPort: 4173
               name: http
-          # --- DEBUT DE LA CORRECTION ---
           livenessProbe:
             httpGet:
               path: /

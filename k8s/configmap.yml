@@ -22,8 +22,6 @@ data:
   REFRESH_EXPIRES_DAYS: "7"
   HEARTBEAT_GRACE_SECONDS: "120"
   LOGIN_RATE_LIMIT: "5 per minute"
-  # Remplacé au déploiement par le secret GitHub CORS_ORIGINS
-  # Ex: https://ton-domaine.com ou http://<IP_SERVEUR>:<NODE_PORT>
   CORS_ORIGINS: "plateforme-examen.duckdns.org"
   VITE_API_URL: "http://34.10.229.174:5000/api"
   API_UPSTREAM: "backend:5000"
