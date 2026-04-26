@@ -156,7 +156,7 @@ jobs:
 
             # ── Volume (PVC postgres-pvc) ──
             # Doit être créé avant le déploiement de postgres
-            kubectl apply -f /tmp/k8s-examen/volumes.yml -n \$NAMESPACE
+            kubectl apply -f /tmp/k8s-examen/volume.yml -n \$NAMESPACE
 
             # ── Base de données ──
             kubectl apply -f /tmp/k8s-examen/database.yml -n \$NAMESPACE
