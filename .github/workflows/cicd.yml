@@ -117,16 +117,20 @@ jobs:
 
       - name: Copy manifests to server
         run: |
+          # On récupère la variable depuis GitHub
+          TARGET_DIR="${{ vars.K8S_WORKDIR }}"
 
+          # On prépare le terrain sur le serveur
           ssh -i ~/.ssh/plateforme \
               -o StrictHostKeyChecking=no \
               ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} \
-              "rm -rf /tmp/k8s-examen"
+              "sudo rm -rf $TARGET_DIR && sudo mkdir -p $TARGET_DIR && sudo chown ${{ secrets.SERVER_USER }} $TARGET_DIR"
           
+          # On copie les fichiers vers le chemin défini dans GitHub
           scp -i ~/.ssh/plateforme \
               -o StrictHostKeyChecking=no \
-              -r ./k8s \
-              ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/k8s-examen
+              -r ./k8s/* \
+              ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:$TARGET_DIR
 
       - name: Deploy on K3s
         run: |
