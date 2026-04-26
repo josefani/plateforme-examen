@@ -32,15 +32,10 @@ spec:
               name: http
           livenessProbe:
           env:
-            - name: CHOKIDAR_USEPOLLING
-              valueFrom:
-                configMapKeyRef:
-                  name: application-config
-                  key: CHOKIDAR_USEPOLLING
             - name: VITE_API_URL
               valueFrom:
                 configMapKeyRef:
-                  name: application-config
+                  name: plateforme-examen-config
                   key: VITE_API_URL
           httpGet:
             path: /
