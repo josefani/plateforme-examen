@@ -34,8 +34,7 @@ jobs:
 
       - name: Pytest
         working-directory: ./backend
-        # FIX : "python -m pytest" évite le "command not found" sur les runners CI
-        # car pytest est appelé via l'interpréteur Python et non via le PATH système
+        # "python -m pytest" évite le "command not found" sur les runners CI
         run: pytest || true
 
       # ── Frontend Tests ──
@@ -111,9 +110,7 @@ jobs:
       - name: Set image tag
         run: echo "TAG=${GITHUB_SHA::7}" >> $GITHUB_ENV
 
-      # FIX SSH : ssh-keyscan récupère la vraie clé du serveur au moment du job
-      # et StrictHostKeyChecking=accept-new la mémorise pour toutes les commandes suivantes.
-      # Plus fiable que de stocker SERVER_KNOWN_HOSTS manuellement dans les secrets.
+      # ssh-keyscan récupère la vraie clé du serveur au moment du job
       - name: Configure SSH
         run: |
           mkdir -p ~/.ssh
@@ -122,7 +119,7 @@ jobs:
           ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
-      # Step de debug SSH — à supprimer une fois le déploiement stabilisé
+      # Test de connexion SSH — à supprimer une fois le déploiement stabilisé
       - name: Debug SSH Connection
         run: |
           echo "=== known_hosts ==="
@@ -178,9 +175,10 @@ jobs:
             #     periodSeconds: 10
             kubectl apply -f /tmp/k8s-examen/database.yml
 
-            # Attendre que la DB soit ready avant de déployer le backend
-            # (équivalent du depends_on + condition: service_healthy du compose)
-            kubectl rollout status deployment/plateforme-db --timeout=90s
+            # FIX : le deployment postgres s'appelle "postgres" dans les manifests K8s
+            # (et non "plateforme-db" comme supposé initialement)
+            # Pour vérifier les vrais noms : kubectl get deployments -n plateforme-examen
+            kubectl rollout status deployment/postgres --timeout=90s
 
             # ── Backend ──
             kubectl apply -f /tmp/k8s-examen/backend.yml
