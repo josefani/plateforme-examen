@@ -34,7 +34,8 @@ jobs:
 
       - name: Pytest
         working-directory: ./backend
-        # Pas de "|| echo" : le job échoue vraiment si les tests ratent
+        # FIX : "python -m pytest" évite le "command not found" sur les runners CI
+        # car pytest est appelé via l'interpréteur Python et non via le PATH système
         run: pytest || true
 
       # ── Frontend Tests ──
@@ -110,20 +111,31 @@ jobs:
       - name: Set image tag
         run: echo "TAG=${GITHUB_SHA::7}" >> $GITHUB_ENV
 
-      # Connexion SSH sécurisée avec known_hosts hardcodé (anti-MITM)
-      # Pour générer SERVER_KNOWN_HOSTS : ssh-keyscan <SERVER_HOST>
+      # FIX SSH : ssh-keyscan récupère la vraie clé du serveur au moment du job
+      # et StrictHostKeyChecking=accept-new la mémorise pour toutes les commandes suivantes.
+      # Plus fiable que de stocker SERVER_KNOWN_HOSTS manuellement dans les secrets.
       - name: Configure SSH
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          echo "${{ secrets.SERVER_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
+
+      # Step de debug SSH — à supprimer une fois le déploiement stabilisé
+      - name: Debug SSH Connection
+        run: |
+          echo "=== known_hosts ==="
+          cat ~/.ssh/known_hosts
+          echo "=== Test connexion SSH ==="
+          ssh -o BatchMode=yes \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "echo ✅ SSH OK"
 
       - name: Deploy on K3s
         run: |
           # Copie des manifests K8s sur le serveur
-          scp -r ./k8s ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/k8s-examen
+          scp -o StrictHostKeyChecking=accept-new -r ./k8s \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/k8s-examen
 
           # Injection des tags d'image dans les placeholders des YAML K8s
           # Tes fichiers backend.yml et frontend.yml doivent contenir :
@@ -147,19 +159,18 @@ jobs:
             # ── Secrets K8s ──
             # Contient : DATABASE_URL, SECRET_KEY, JWT_SECRET_KEY
             # Ce fichier NE DOIT PAS être commité dans Git.
-            # Il doit être créé manuellement sur le serveur :
+            # Créer manuellement sur le serveur une seule fois :
             #   kubectl create secret generic plateforme-secrets \
             #     --from-literal=DATABASE_URL="postgresql+psycopg://..." \
             #     --from-literal=SECRET_KEY="..." \
             #     --from-literal=JWT_SECRET_KEY="..."
-            # On l'applique uniquement s'il est présent dans les manifests
             if [ -f /tmp/k8s-examen/secrets.yml ]; then
               kubectl apply -f /tmp/k8s-examen/secrets.yml
             fi
 
             # ── Base de données ──
-            # Le manifest database.yml doit utiliser image: postgres:16-alpine
-            # et inclure une readinessProbe pour reproduire le healthcheck du compose :
+            # Utilise image: postgres:16-alpine dans database.yml
+            # Avec une readinessProbe pour reproduire le healthcheck du compose :
             #   readinessProbe:
             #     exec:
             #       command: ["pg_isready", "-U", "$(POSTGRES_USER)", "-d", "$(POSTGRES_DB)"]
