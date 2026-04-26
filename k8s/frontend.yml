@@ -24,7 +24,8 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: ghcr.io/GITHUB_ORG/GITHUB_REPO/frontend:latest
+          # Remplacé au déploiement par : DOCKER_USERNAME/plateforme-frontend:TAG
+          image: FRONTEND_IMAGE_TAG
           imagePullPolicy: Always
           ports:
             - containerPort: 4173
@@ -52,8 +53,8 @@ spec:
             limits:
               cpu: "200m"
               memory: "256Mi"
-      imagePullSecrets:
-        - name: ghcr-secret
+      # FIX : suppression de imagePullSecrets ghcr-secret
+      # Les images sont sur Docker Hub (public) → pas de secret nécessaire
 ---
 apiVersion: v1
 kind: Service

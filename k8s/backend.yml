@@ -36,7 +36,8 @@ spec:
               echo "PostgreSQL est prêt."
       containers:
         - name: backend
-          image: ghcr.io/GITHUB_ORG/GITHUB_REPO/backend:latest
+          # Remplacé au déploiement par : DOCKER_USERNAME/plateforme-backend:TAG
+          image: BACKEND_IMAGE_TAG
           imagePullPolicy: Always
           ports:
             - containerPort: 5000
@@ -127,8 +128,8 @@ spec:
             limits:
               cpu: "500m"
               memory: "512Mi"
-      imagePullSecrets:
-        - name: ghcr-secret
+      # FIX : suppression de imagePullSecrets ghcr-secret
+      # Les images sont sur Docker Hub (public) → pas de secret nécessaire
 ---
 apiVersion: v1
 kind: Service
