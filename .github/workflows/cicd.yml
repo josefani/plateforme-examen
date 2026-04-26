@@ -168,7 +168,7 @@ jobs:
             # ── Backend ──
             kubectl apply -f /tmp/k8s-examen/backend.yml -n \$NAMESPACE
             # FIX : nom réel du deployment = "backend" (pas "plateforme-backend")
-            kubectl rollout status deployment/backend -n \$NAMESPACE --timeout=300s
+            kubectl rollout status deployment/backend -n \$NAMESPACE --timeout=1000s
 
             # ── Frontend ──
             kubectl apply -f /tmp/k8s-examen/frontend.yml -n \$NAMESPACE

@@ -103,21 +103,19 @@ spec:
                   name: plateforme-examen-secrets
                   key: JWT_SECRET_KEY
             - name: DATABASE_URL
-              # Utilisation des variables définies ci-dessus
               value: "postgresql+psycopg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@db:5432/$(POSTGRES_DB)"
+          # FIX : Utilisation de tcpSocket au lieu de httpGet pour éviter l'erreur 404
           livenessProbe:
-            httpGet:
-              path: / 
+            tcpSocket:
               port: 5000
-            initialDelaySeconds: 60 # Un peu plus de marge pour Flask
+            initialDelaySeconds: 60
             periodSeconds: 15
             timeoutSeconds: 5
             failureThreshold: 3
           readinessProbe:
-            httpGet:
-              path: / 
+            tcpSocket:
               port: 5000
-            initialDelaySeconds: 40 # Augmenté pour éviter le "timeout" précoce
+            initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 3
