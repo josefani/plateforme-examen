@@ -35,7 +35,7 @@ jobs:
       - name: Pytest
         working-directory: ./backend
         # Pas de "|| echo" : le job échoue vraiment si les tests ratent
-        run: pytest
+        run: python3 -m pytest
 
       # ── Frontend Tests ──
       - name: Setup Node.js
