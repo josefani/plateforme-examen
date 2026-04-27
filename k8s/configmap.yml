@@ -22,7 +22,6 @@ data:
   REFRESH_EXPIRES_DAYS: "7"
   HEARTBEAT_GRACE_SECONDS: "120"
   LOGIN_RATE_LIMIT: "5 per minute"
-  CORS_ORIGINS: "plateforme-examen.duckdns.org"
-  VITE_API_URL: "http://34.10.229.174:5000/api"
+  CORS_ORIGINS: "http://backend-service:4173,http://backend-service:5173"
+  VITE_API_URL: "http://backend-service:5000/api"
   API_UPSTREAM: "backend:5000"
-  CHOKIDAR_USEPOLLING: 'true'

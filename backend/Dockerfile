@@ -1,7 +1,9 @@
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    FLASK_APP=manage.py \
+    FLASK_ENV=production
 
 WORKDIR /app
 
