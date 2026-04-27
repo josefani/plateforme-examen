@@ -11,11 +11,6 @@ spec:
   selector:
     matchLabels:
       app: frontend
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
   template:
     metadata:
       labels:
@@ -28,34 +23,7 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 4173
-              name: http
-          livenessProbe:
-            httpGet:
-              path: /
-              port: 4173
-            initialDelaySeconds: 15
-            periodSeconds: 15
-            timeoutSeconds: 5
-            failureThreshold: 3
-          readinessProbe:
-            httpGet:
-              path: /
-              port: 4173
-            initialDelaySeconds: 10
-            periodSeconds: 10
-            timeoutSeconds: 3
-            failureThreshold: 3
-          env:
-            - name: CHOKIDAR_USEPOLLING
-              valueFrom:
-                configMapKeyRef:
-                  name: plateforme-examen-config
-                  key: CHOKIDAR_USEPOLLING
-            - name: VITE_API_URL
-              valueFrom:
-                configMapKeyRef:
-                  name: plateforme-examen-config
-                  key: VITE_API_URL
+          # Pas de env ici — Vite a déjà buildé avec la bonne URL
           resources:
             requests:
               cpu: "50m"
@@ -69,15 +37,11 @@ kind: Service
 metadata:
   name: frontend-service
   namespace: plateforme-examen
-  labels:
-    app.kubernetes.io/name: plateforme-examen
-    app.kubernetes.io/component: frontend
 spec:
   selector:
     app: frontend
   ports:
     - port: 4173
       targetPort: 4173
-      name: http
-      nodePort: 30333
-  type: NodePort
+  type: ClusterIP   # ← Interne uniquement, NGINX fait le routag
+  
