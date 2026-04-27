@@ -17,3 +17,4 @@ data:
   CORS_ORIGINS: "http://frontend-service:4173,http://frontend-service:5173"
   VITE_API_URL: "http://34.10.229.174:5000/api"
   API_UPSTREAM: "backend:5000"
+  CHOKIDAR_USEPOLLING: "true"
