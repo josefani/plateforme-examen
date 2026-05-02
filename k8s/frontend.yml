@@ -29,6 +29,17 @@ spec:
           ports:
             - containerPort: 4173
               name: http
+          env:
+            - name: VITE_API_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: plateforme-examen-config
+                  key: VITE_API_URL
+            - name: CHOKIDAR_USEPOLLING
+              valueFrom:
+                configMapKeyRef:
+                  name: plateforme-examen-config
+                  key: CHOKIDAR_USEPOLLING
           livenessProbe:
             httpGet:
               path: /
@@ -45,17 +56,6 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 3
-          env:
-            - name: CHOKIDAR_USEPOLLING
-              valueFrom:
-                configMapKeyRef:
-                  name: plateforme-examen-config
-                  key: CHOKIDAR_USEPOLLING
-            - name: VITE_API_URL
-              valueFrom:
-                configMapKeyRef:
-                  name: plateforme-examen-config
-                  key: VITE_API_URL
           resources:
             requests:
               cpu: "50m"

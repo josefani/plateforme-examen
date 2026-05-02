@@ -77,21 +77,6 @@ spec:
                 configMapKeyRef:
                   name: plateforme-examen-config
                   key: CORS_ORIGINS
-            - name: POSTGRES_USER
-              valueFrom:
-                secretKeyRef:
-                  name: plateforme-examen-secrets
-                  key: POSTGRES_USER
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: plateforme-examen-secrets
-                  key: POSTGRES_PASSWORD
-            - name: POSTGRES_DB
-              valueFrom:
-                secretKeyRef:
-                  name: plateforme-examen-secrets
-                  key: POSTGRES_DB
             - name: SECRET_KEY
               valueFrom:
                 secretKeyRef:
@@ -103,8 +88,10 @@ spec:
                   name: plateforme-examen-secrets
                   key: JWT_SECRET_KEY
             - name: DATABASE_URL
-              value: "postgresql+psycopg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@db:5432/$(POSTGRES_DB)"
-          # FIX : Utilisation de tcpSocket au lieu de httpGet pour éviter l'erreur 404
+              valueFrom:
+                secretKeyRef:
+                  name: plateforme-examen-secrets
+                  key: DATABASE_URL    # URL complète dans le secret
           livenessProbe:
             tcpSocket:
               port: 5000

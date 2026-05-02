@@ -6,15 +6,12 @@ metadata:
   labels:
     app.kubernetes.io/name: plateforme-examen
 data:
-  BACKEND_PORT: "5000"
-  FRONTEND_PORT: "4173"
   FLASK_APP: "manage.py"
   FLASK_ENV: "production"
   ACCESS_EXPIRES_MINUTES: "30"
   REFRESH_EXPIRES_DAYS: "7"
   HEARTBEAT_GRACE_SECONDS: "120"
   LOGIN_RATE_LIMIT: "5 per minute"
-  CORS_ORIGINS: "http://frontend-service:4173,http://frontend-service:5173"
+  CORS_ORIGINS: "https://plateforme-examen.duckdns.org"
   VITE_API_URL: "https://plateforme-examen.duckdns.org/api"
-  API_UPSTREAM: "backend:5000"
   CHOKIDAR_USEPOLLING: "true"

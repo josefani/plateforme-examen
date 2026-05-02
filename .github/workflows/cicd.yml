@@ -11,17 +11,20 @@ env:
   IMAGE_BACKEND: ${{ secrets.DOCKER_USERNAME }}/plateforme-backend
 
 jobs:
+  # ─────────────────────────────────────────────
+  # 1. TESTS QUALITÉ
+  # ─────────────────────────────────────────────
   test-apps:
     name: Run Quality Checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # ── Backend Tests ──
+      # ── Backend ──
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
           cache: 'pip'
 
       - name: Install Backend Deps
@@ -32,7 +35,7 @@ jobs:
         working-directory: ./backend
         run: pytest || true
 
-      # ── Frontend Tests ──
+      # ── Frontend ──
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -46,16 +49,22 @@ jobs:
 
       - name: Build Frontend
         working-directory: ./frontend
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
         run: npm run build
 
+  # ─────────────────────────────────────────────
+  # 2. SONARQUBE
+  # ─────────────────────────────────────────────
   sonarqube-analysis:
     name: SonarQube Analysis
     runs-on: ubuntu-latest
     needs: test-apps
+    if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 
+          fetch-depth: 0
 
       - name: SonarQube Scan
         uses: sonarsource/sonarqube-scan-action@master
@@ -63,17 +72,28 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
-  # 3. BUILD & PUSH (Docker Hub)
+  # ─────────────────────────────────────────────
+  # 3. BUILD & PUSH
+  # ─────────────────────────────────────────────
   build-push:
     name: Build & Push Images
     runs-on: ubuntu-latest
     needs: test-apps
     if: github.ref == 'refs/heads/main'
+    outputs:
+      tag: ${{ steps.set-tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Set image tag
-        run: echo "TAG=${GITHUB_SHA::7}" >> $GITHUB_ENV
+        id: set-tag
+        run: |
+          TAG=${GITHUB_SHA::7}
+          echo "TAG=$TAG" >> $GITHUB_ENV
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -86,6 +106,8 @@ jobs:
         with:
           context: ./backend
           push: true
+          cache-from: type=registry,ref=${{ env.IMAGE_BACKEND }}:cache
+          cache-to: type=registry,ref=${{ env.IMAGE_BACKEND }}:cache,mode=max
           tags: |
             ${{ env.IMAGE_BACKEND }}:${{ env.TAG }}
             ${{ env.IMAGE_BACKEND }}:latest
@@ -95,24 +117,27 @@ jobs:
         with:
           context: ./frontend
           push: true
+          cache-from: type=registry,ref=${{ env.IMAGE_FRONTEND }}:cache
+          cache-to: type=registry,ref=${{ env.IMAGE_FRONTEND }}:cache,mode=max
           build-args: |
             VITE_API_URL=${{ secrets.VITE_API_URL }}
           tags: |
             ${{ env.IMAGE_FRONTEND }}:${{ env.TAG }}
             ${{ env.IMAGE_FRONTEND }}:latest
 
-  
-  # 4. CONNEXION SSH + DÉPLOIEMENT(K3s)
+  # ─────────────────────────────────────────────
+  # 4. DÉPLOIEMENT K3s
+  # ─────────────────────────────────────────────
   deploy:
     name: Deploy to K3s
     runs-on: ubuntu-latest
-    needs: build-push
+    needs: [build-push, sonarqube-analysis]
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
 
       - name: Set image tag
-        run: echo "TAG=${GITHUB_SHA::7}" >> $GITHUB_ENV
+        run: echo "TAG=${{ needs.build-push.outputs.tag }}" >> $GITHUB_ENV
 
       - name: Configure SSH
         run: |
@@ -122,81 +147,104 @@ jobs:
           ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
-      - name: Copy manifests to server
+      - name: Préparer les manifests en local
         run: |
-          # On récupère la variable depuis GitHub
-          TARGET_DIR="${{ vars.K8S_WORKDIR }}"
+          # Copie dans un dossier temporaire pour éviter de modifier les fichiers du repo
+          cp -r ./k8s /tmp/k8s-deploy
 
-          # On prépare le terrain sur le serveur
+          # ── Injection des secrets dans secrets.yml ──
+          sed -i "s|CHANGEME_postgres_password|${{ secrets.POSTGRES_PASSWORD }}|g" /tmp/k8s-deploy/secrets.yml
+          sed -i "s|CHANGEME_secret_key|${{ secrets.SECRET_KEY }}|g"               /tmp/k8s-deploy/secrets.yml
+          sed -i "s|CHANGEME_jwt_secret_key|${{ secrets.JWT_SECRET_KEY }}|g"       /tmp/k8s-deploy/secrets.yml
+
+          # ── DATABASE_URL dans secrets.yml ──
+          sed -i "s|CHANGEME_database_url|postgresql+psycopg://${{ secrets.POSTGRES_USER }}:${{ secrets.POSTGRES_PASSWORD }}@db:5432/${{ secrets.POSTGRES_DB }}|g" /tmp/k8s-deploy/secrets.yml
+
+          # ── Injection CORS dans configmap.yml ──
+          sed -i "s|CHANGEME_cors_origins|${{ secrets.CORS_ORIGINS }}|g" /tmp/k8s-deploy/configmap.yml
+
+          # ── Injection des images ──
+          sed -i "s|BACKEND_IMAGE_TAG|${{ env.IMAGE_BACKEND }}:${{ env.TAG }}|g"   /tmp/k8s-deploy/backend.yml
+          sed -i "s|FRONTEND_IMAGE_TAG|${{ env.IMAGE_FRONTEND }}:${{ env.TAG }}|g" /tmp/k8s-deploy/frontend.yml
+
+      - name: Copier les manifests sur le serveur
+        run: |
+          TARGET_DIR="${{ vars.K8S_WORKDIR }}"
           ssh -i ~/.ssh/plateforme \
               -o StrictHostKeyChecking=no \
               ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} \
-              "sudo rm -rf $TARGET_DIR && sudo mkdir -p $TARGET_DIR && sudo chown ${{ secrets.SERVER_USER }} $TARGET_DIR"
-          
-          # On copie les fichiers vers le chemin défini dans GitHub
+              "sudo rm -rf $TARGET_DIR && sudo mkdir -p $TARGET_DIR && sudo chown ${{ secrets.SERVER_USER }}:${{ secrets.SERVER_USER }} $TARGET_DIR"
+
           scp -i ~/.ssh/plateforme \
               -o StrictHostKeyChecking=no \
-              -r ./k8s/* \
+              -r /tmp/k8s-deploy/* \
               ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:$TARGET_DIR
 
-      - name: Deploy on K3s
+      - name: Déployer sur K3s
         run: |
-          # On définit la variable locale pour le runner GitHub
           TARGET_DIR="${{ vars.K8S_WORKDIR }}"
 
           ssh -i ~/.ssh/plateforme \
               -o StrictHostKeyChecking=no \
-              ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << EOF
+              ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
 
             set -e
             NAMESPACE=plateforme-examen
-            
-            # On utilise la variable TARGET_DIR que SSH a récupéré du runner
-            WORK_DIR="$TARGET_DIR"
-            echo "Utilisation du répertoire de travail : \$WORK_DIR"
+            WORK_DIR="${{ vars.K8S_WORKDIR }}"
 
-            # ── Injection des secrets ──
-            sed -i "s|CHANGEME_postgres_password|${{ secrets.POSTGRES_PASSWORD }}|g" \$WORK_DIR/secrets.yml
-            sed -i "s|CHANGEME_secret_key|${{ secrets.SECRET_KEY }}|g"               \$WORK_DIR/secrets.yml
-            sed -i "s|CHANGEME_jwt_secret_key|${{ secrets.JWT_SECRET_KEY }}|g"       \$WORK_DIR/secrets.yml
+            echo "📁 Répertoire de travail : $WORK_DIR"
 
-            # ── Injection ConfigMap ──
-            sed -i "s|CHANGEME_cors_origins|${{ secrets.CORS_ORIGINS }}|g" \$WORK_DIR/configmap.yml
+            # ── Namespace (idempotent) ──
+            kubectl apply -f $WORK_DIR/namespace.yml
 
-            # ── Injection Images ──
-            sed -i "s|BACKEND_IMAGE_TAG|${{ env.IMAGE_BACKEND }}:${{ env.TAG }}|g"   \$WORK_DIR/backend.yml
-            sed -i "s|FRONTEND_IMAGE_TAG|${{ env.IMAGE_FRONTEND }}:${{ env.TAG }}|g" \$WORK_DIR/frontend.yml
+            # ── Secrets & ConfigMap ──
+            kubectl apply -f $WORK_DIR/secrets.yml -n $NAMESPACE
+            kubectl apply -f $WORK_DIR/configmap.yml -n $NAMESPACE
 
-            # ── Application des manifests avec le bon chemin ──
-            kubectl apply -f \$WORK_DIR/configmap.yml -n \$NAMESPACE
-            kubectl apply -f \$WORK_DIR/secrets.yml -n \$NAMESPACE
-            kubectl apply -f \$WORK_DIR/volume.yml -n \$NAMESPACE
-            kubectl apply -f \$WORK_DIR/database.yml -n \$NAMESPACE
+            # ── Volume ──
+            kubectl apply -f $WORK_DIR/volume.yml -n $NAMESPACE
 
-            kubectl rollout status deployment/postgres -n \$NAMESPACE --timeout=120s
+            # ── Base de données ──
+            kubectl apply -f $WORK_DIR/database.yml -n $NAMESPACE
+            kubectl rollout status deployment/postgres -n $NAMESPACE --timeout=120s
 
-            kubectl apply -f \$WORK_DIR/backend.yml -n \$NAMESPACE
-            kubectl rollout status deployment/backend -n \$NAMESPACE --timeout=120s
+            # ── Backend ──
+            kubectl apply -f $WORK_DIR/backend.yml -n $NAMESPACE
+            kubectl rollout status deployment/backend -n $NAMESPACE --timeout=120s
 
-            kubectl apply -f \$WORK_DIR/frontend.yml -n \$NAMESPACE
-            kubectl rollout status deployment/frontend -n \$NAMESPACE --timeout=120s
+            # ── Frontend ──
+            kubectl apply -f $WORK_DIR/frontend.yml -n $NAMESPACE
+            kubectl rollout status deployment/frontend -n $NAMESPACE --timeout=120s
 
-            echo "✅ Déploiement terminé avec succès dans \$WORK_DIR."
+            echo "✅ Déploiement ${{ env.TAG }} terminé avec succès."
           EOF
-          
-  # 5. ANALYSE DE SÉCURITÉ DYNAMIQUE
+
+      - name: Vérifier les pods
+        if: always()
+        run: |
+          ssh -i ~/.ssh/plateforme \
+              -o StrictHostKeyChecking=no \
+              ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} \
+              "kubectl get pods -n plateforme-examen -o wide"
+
+  # ─────────────────────────────────────────────
+  # 5. SCAN SÉCURITÉ OWASP ZAP
+  # ─────────────────────────────────────────────
   security-scan-zap:
     name: OWASP ZAP Security Scan
     runs-on: ubuntu-latest
     needs: deploy
+    if: github.ref == 'refs/heads/main'
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+
+      - name: Attendre que le service soit prêt
+        run: sleep 30
 
       - name: ZAP Baseline Scan
         uses: zaproxy/action-baseline@v0.12.0
         with:
-          target: 'http://34.10.229.174'
+          target: 'https://plateforme-examen.duckdns.org'
           token: ${{ secrets.GITHUB_TOKEN }}
           issue_title: 'Alerte de Sécurité : Faille détectée par ZAP'
           fail_action: false

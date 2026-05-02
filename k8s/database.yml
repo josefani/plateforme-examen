@@ -45,12 +45,13 @@ spec:
           volumeMounts:
             - name: postgres-storage
               mountPath: /var/lib/postgresql/data
+              subPath: pgdata          # évite les conflits avec lost+found
           livenessProbe:
             exec:
               command:
                 - sh
                 - -c
-                - pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}
+                - exec pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
@@ -60,7 +61,7 @@ spec:
               command:
                 - sh
                 - -c
-                - pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}
+                - exec pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
             initialDelaySeconds: 15
             periodSeconds: 5
             timeoutSeconds: 3
