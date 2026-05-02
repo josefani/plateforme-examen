@@ -188,7 +188,7 @@ jobs:
             set -e
             NAMESPACE=plateforme-examen
 
-            echo "🧹 Nettoyage des anciens déploiements..."
+            echo "Nettoyage des anciens déploiements..."
 
             if kubectl get namespace $NAMESPACE > /dev/null 2>&1; then
 
@@ -211,11 +211,11 @@ jobs:
               kubectl delete configmap plateforme-examen-config \
                 -n $NAMESPACE --ignore-not-found=true
 
-              # ⚠️ PVC conservé pour garder les données Postgres
-              echo "✅ Anciens éléments supprimés (données Postgres conservées)"
+              # PVC conservé pour garder les données Postgres
+              echo "Anciens éléments supprimés (données Postgres conservées)"
 
             else
-              echo "ℹ️  Namespace $NAMESPACE inexistant, rien à nettoyer"
+              echo "ℹNamespace $NAMESPACE inexistant, rien à nettoyer"
             fi
           EOF
 
@@ -230,8 +230,8 @@ jobs:
             set -e
             NAMESPACE=plateforme-examen
 
-            echo "📁 Répertoire de travail : $WORK_DIR"
-            echo "🏷️  Version : $TAG"
+            echo "Répertoire de travail : $WORK_DIR"
+            echo "Version : $TAG"
 
             # ── Namespace (idempotent) ──
             kubectl apply -f $WORK_DIR/namespace.yml
@@ -255,7 +255,7 @@ jobs:
             kubectl apply -f $WORK_DIR/frontend.yml -n $NAMESPACE
             kubectl rollout status deployment/frontend -n $NAMESPACE --timeout=120s
 
-            echo "✅ Déploiement $TAG terminé avec succès."
+            echo "Déploiement $TAG terminé avec succès."
           EOF
 
       - name: Mettre à jour nginx avec la nouvelle ClusterIP
@@ -270,28 +270,28 @@ jobs:
             NEW_IP=$(kubectl get service backend-service \
               -n plateforme-examen \
               -o jsonpath='{.spec.clusterIP}')
-            echo "🔍 Nouvelle ClusterIP backend : $NEW_IP"
+            echo "Nouvelle ClusterIP backend : $NEW_IP"
 
             # Récupérer l'ancienne IP dans nginx
             OLD_IP=$(grep -oP '(?<=proxy_pass http://)[0-9.]+(?=:5000)' \
               /etc/nginx/sites-available/plateforme || echo "")
 
             if [ -z "$OLD_IP" ]; then
-              echo "⚠️  Aucune IP trouvée dans nginx, injection directe..."
+              echo "Aucune IP trouvée dans nginx, injection directe..."
               sudo sed -i \
                 "s|proxy_pass http://.*:5000/api/;|proxy_pass http://$NEW_IP:5000/api/;|g" \
                 /etc/nginx/sites-available/plateforme
             elif [ "$OLD_IP" != "$NEW_IP" ]; then
-              echo "🔄 Mise à jour nginx : $OLD_IP → $NEW_IP"
+              echo "Mise à jour nginx : $OLD_IP → $NEW_IP"
               sudo sed -i \
                 "s|http://$OLD_IP:5000|http://$NEW_IP:5000|g" \
                 /etc/nginx/sites-available/plateforme
             else
-              echo "✅ IP inchangée ($NEW_IP), nginx ok"
+              echo "IP inchangée ($NEW_IP), nginx ok"
             fi
 
             sudo nginx -t && sudo systemctl reload nginx
-            echo "✅ nginx rechargé avec succès"
+            echo "nginx rechargé avec succès"
           EOF
 
       - name: Vérifier les pods
