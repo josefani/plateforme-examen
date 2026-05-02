@@ -210,7 +210,7 @@ jobs:
 
             # ── Backend ──
             kubectl apply -f $WORK_DIR/backend.yml -n $NAMESPACE
-            kubectl rollout status deployment/backend -n $NAMESPACE --timeout=120s
+            kubectl rollout status deployment/backend -n $NAMESPACE --timeout=1000s
 
             # ── Frontend ──
             kubectl apply -f $WORK_DIR/frontend.yml -n $NAMESPACE
