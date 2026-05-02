@@ -149,18 +149,17 @@ jobs:
 
       - name: Préparer les manifests en local
         run: |
-          # Copie dans un dossier temporaire pour éviter de modifier les fichiers du repo
           cp -r ./k8s /tmp/k8s-deploy
 
-          # ── Injection des secrets dans secrets.yml ──
+          # ── Injection des secrets ──
           sed -i "s|CHANGEME_postgres_password|${{ secrets.POSTGRES_PASSWORD }}|g" /tmp/k8s-deploy/secrets.yml
           sed -i "s|CHANGEME_secret_key|${{ secrets.SECRET_KEY }}|g"               /tmp/k8s-deploy/secrets.yml
           sed -i "s|CHANGEME_jwt_secret_key|${{ secrets.JWT_SECRET_KEY }}|g"       /tmp/k8s-deploy/secrets.yml
 
-          # ── DATABASE_URL dans secrets.yml ──
+          # ── DATABASE_URL ──
           sed -i "s|CHANGEME_database_url|postgresql+psycopg://${{ secrets.POSTGRES_USER }}:${{ secrets.POSTGRES_PASSWORD }}@db:5432/${{ secrets.POSTGRES_DB }}|g" /tmp/k8s-deploy/secrets.yml
 
-          # ── Injection CORS dans configmap.yml ──
+          # ── Injection CORS ──
           sed -i "s|CHANGEME_cors_origins|${{ secrets.CORS_ORIGINS }}|g" /tmp/k8s-deploy/configmap.yml
 
           # ── Injection des images ──
@@ -180,19 +179,59 @@ jobs:
               -r /tmp/k8s-deploy/* \
               ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:$TARGET_DIR
 
-      - name: Déployer sur K3s
+      - name: Nettoyer les anciens déploiements
         run: |
-          TARGET_DIR="${{ vars.K8S_WORKDIR }}"
-
           ssh -i ~/.ssh/plateforme \
               -o StrictHostKeyChecking=no \
               ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
 
             set -e
             NAMESPACE=plateforme-examen
-            WORK_DIR="${{ vars.K8S_WORKDIR }}"
+
+            echo "🧹 Nettoyage des anciens déploiements..."
+
+            if kubectl get namespace $NAMESPACE > /dev/null 2>&1; then
+
+              # Supprimer les deployments
+              kubectl delete deployment backend frontend postgres \
+                -n $NAMESPACE --ignore-not-found=true
+
+              # Attendre que les pods soient bien supprimés
+              kubectl wait --for=delete pod \
+                -l app.kubernetes.io/name=plateforme-examen \
+                -n $NAMESPACE --timeout=60s 2>/dev/null || true
+
+              # Supprimer les services
+              kubectl delete service backend-service frontend-service db \
+                -n $NAMESPACE --ignore-not-found=true
+
+              # Supprimer secrets et configmap
+              kubectl delete secret plateforme-examen-secrets \
+                -n $NAMESPACE --ignore-not-found=true
+              kubectl delete configmap plateforme-examen-config \
+                -n $NAMESPACE --ignore-not-found=true
+
+              # ⚠️ PVC conservé pour garder les données Postgres
+              echo "✅ Anciens éléments supprimés (données Postgres conservées)"
+
+            else
+              echo "ℹ️  Namespace $NAMESPACE inexistant, rien à nettoyer"
+            fi
+          EOF
+
+      - name: Déployer sur K3s
+        run: |
+          ssh -i ~/.ssh/plateforme \
+              -o StrictHostKeyChecking=no \
+              ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} \
+              WORK_DIR="${{ vars.K8S_WORKDIR }}" TAG="${{ env.TAG }}" \
+              bash << 'EOF'
+
+            set -e
+            NAMESPACE=plateforme-examen
 
             echo "📁 Répertoire de travail : $WORK_DIR"
+            echo "🏷️  Version : $TAG"
 
             # ── Namespace (idempotent) ──
             kubectl apply -f $WORK_DIR/namespace.yml
@@ -210,13 +249,49 @@ jobs:
 
             # ── Backend ──
             kubectl apply -f $WORK_DIR/backend.yml -n $NAMESPACE
-            kubectl rollout status deployment/backend -n $NAMESPACE --timeout=1000s
+            kubectl rollout status deployment/backend -n $NAMESPACE --timeout=180s
 
             # ── Frontend ──
             kubectl apply -f $WORK_DIR/frontend.yml -n $NAMESPACE
             kubectl rollout status deployment/frontend -n $NAMESPACE --timeout=120s
 
-            echo "✅ Déploiement ${{ env.TAG }} terminé avec succès."
+            echo "✅ Déploiement $TAG terminé avec succès."
+          EOF
+
+      - name: Mettre à jour nginx avec la nouvelle ClusterIP
+        run: |
+          ssh -i ~/.ssh/plateforme \
+              -o StrictHostKeyChecking=no \
+              ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
+
+            set -e
+
+            # Récupérer la nouvelle ClusterIP du backend
+            NEW_IP=$(kubectl get service backend-service \
+              -n plateforme-examen \
+              -o jsonpath='{.spec.clusterIP}')
+            echo "🔍 Nouvelle ClusterIP backend : $NEW_IP"
+
+            # Récupérer l'ancienne IP dans nginx
+            OLD_IP=$(grep -oP '(?<=proxy_pass http://)[0-9.]+(?=:5000)' \
+              /etc/nginx/sites-available/plateforme || echo "")
+
+            if [ -z "$OLD_IP" ]; then
+              echo "⚠️  Aucune IP trouvée dans nginx, injection directe..."
+              sudo sed -i \
+                "s|proxy_pass http://.*:5000/api/;|proxy_pass http://$NEW_IP:5000/api/;|g" \
+                /etc/nginx/sites-available/plateforme
+            elif [ "$OLD_IP" != "$NEW_IP" ]; then
+              echo "🔄 Mise à jour nginx : $OLD_IP → $NEW_IP"
+              sudo sed -i \
+                "s|http://$OLD_IP:5000|http://$NEW_IP:5000|g" \
+                /etc/nginx/sites-available/plateforme
+            else
+              echo "✅ IP inchangée ($NEW_IP), nginx ok"
+            fi
+
+            sudo nginx -t && sudo systemctl reload nginx
+            echo "✅ nginx rechargé avec succès"
           EOF
 
       - name: Vérifier les pods
